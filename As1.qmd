@@ -1,0 +1,144 @@
+---
+title: "As1 1005"
+format: html
+editor: visual
+---
+
+# Global Temperature
+
+------------------------------------------------------------------------
+
+Cleansing
+
+```{r}
+rm(list=ls())
+```
+
+Reading in packages
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(zoo)
+library(broom)
+```
+
+Reading in the datasets, organizing them and calculate average.
+
+```{r}
+# Function to load and clean data so I avoid doing it 4 times
+# (LAC stands for Load And Clean)
+LAC <- function(url) {
+  # Load the data using read_table2. We assume the data is 
+  # in a space-separated format with a header.
+  df <- read_table2(url)
+  
+  # Filter out rows where 'Year' is not a valid numeric value.
+  # This removes extra lines that might cause issues.
+  df <- df %>% filter(!is.na(as.numeric(Year)))
+  
+  # Select the columns we need: 'Year', 'Mo', 'Globe', 'Land', 'Ocean'.
+  df <- df %>%
+    select(Year, Mo, Globe, Land, Ocean) 
+    
+  # Create a new column called 'Date' by combining 'Year' and 'Mo'.
+  # We use the 'ymd' function to ensure the date format is correct.
+  df <- df %>%
+    mutate(Date = ymd(paste(Year, Mo, 1, sep = "-"))) 
+    
+  # Extract the year and month from the 'Date' column and
+  # store them in new columns called 'Year' and 'Month'.
+  df <- df %>%
+    mutate(Year = year(Date), Month = month(Date)) 
+    
+  # Select the final set of columns we want to keep.
+  df <- df %>%
+    select(Year, Month, Date, Globe, Land, Ocean) 
+    
+  # Convert any remaining character columns to numeric.
+  df <- df %>%
+    mutate_if(is.character, as.numeric) 
+  
+  # Return the cleaned data.
+  return(df)
+}
+
+# Load the four datasets using the LAC function.
+df_lower <- LAC("https://www.nsstc.uah.edu/data/msu/v6.0/tlt/uahncdc_lt_6.0.txt")
+df_mid <- LAC("https://www.nsstc.uah.edu/data/msu/v6.0/tmt/uahncdc_mt_6.0.txt")
+df_tropo <- LAC("https://www.nsstc.uah.edu/data/msu/v6.0/ttp/uahncdc_tp_6.0.txt")
+df_lowTropo <- LAC("https://www.nsstc.uah.edu/data/msu/v6.0/tls/uahncdc_ls_6.0.txt")
+
+# Function to calculate the 12-month moving average
+# so I avoid doing it 4 times
+# (CA stands for Calculate Average)
+CA <- function(df) {
+  # Calculate the 12-month moving average of the 'Globe' column
+  # and store it in a new column called '12_month_avg'.
+  # We use 'rollmean' with 'align = "right"' to get the 
+  # right-aligned moving average.
+  df %>%
+    mutate(`12_month_avg` = rollmean(Globe, k = 12, align = "right", fill = NA))
+}
+
+# Calculate the moving averages for each dataset.
+df_lower <- CA(df_lower)
+df_mid <- CA(df_mid)
+df_tropo <- CA(df_tropo)
+df_lowTropo <- CA(df_lowTropo)
+
+# Calculate the average of the four 12-month moving averages.
+# We first create a new dataframe called 'average_data' that 
+# includes the 'Date' and '12_month_avg' columns from 'df_lower'.
+# Then, we calculate the row-wise average of the '12_month_avg'
+# columns from all four datasets and store it in a new column 
+# called 'Average' in the 'average_data' dataframe.
+average_data <- df_lower[, c("Date", "12_month_avg")]
+average_data$Average <- rowMeans(cbind(df_lower$`12_month_avg`, 
+                                      df_mid$`12_month_avg`, 
+                                      df_tropo$`12_month_avg`, 
+                                      df_lowTropo$`12_month_avg`), 
+                                na.rm = TRUE)
+```
+
+Plotting
+
+```{r}
+# Prepare the data for plotting.
+# We start with the 'Date' and '12_month_avg' columns from 'df_lower'.
+# Then, we rename the '12_month_avg' column to 'Lower Troposphere'
+# and join the other datasets one by one, renaming their
+# '12_month_avg' columns accordingly.
+# Finally, we join with the 'average_data' dataframe to include
+# the overall average and use 'pivot_longer' to reshape the data
+# into a long format suitable for plotting.
+plot_data <- df_lower[, c("Date", "12_month_avg")]
+plot_data <- plot_data %>%
+  rename("Lower Troposphere" = "12_month_avg") %>%
+  left_join(df_mid[, c("Date", "12_month_avg")], by = "Date") %>%
+  rename("Mid Troposphere" = "12_month_avg") %>%
+  
+  left_join(df_tropo[, c("Date", "12_month_avg")], by = "Date") %>%
+  rename("Tropopause" = "12_month_avg") %>%
+  
+  left_join(df_lowTropo[, c("Date", "12_month_avg")], by = "Date") %>%
+  rename("Lower Stratosphere" = "12_month_avg") %>%
+  
+  left_join(average_data[, c("Date", "Average")], by = "Date") %>%
+  pivot_longer(cols = c("Lower Troposphere", "Mid Troposphere", 
+                       "Tropopause", "Lower Stratosphere", "Average"), 
+               names_to = "Location", values_to = "Temperature")
+
+# Create the plot.
+# We use 'ggplot2' to create a line plot. The x-axis represents
+# the 'Date', the y-axis represents the 'Temperature', and
+# different colors are used for different 'Locations'.
+ggplot(plot_data, aes(x = Date, y = Temperature, color = Location)) +
+  geom_line() +
+  labs(title = "12-Month Moving Average of Global Temperatures",
+       x = "Date",
+       y = "Temperature Anomaly (°C)") +
+  theme_minimal() +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate x-axis labels
+```
