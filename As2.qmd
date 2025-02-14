@@ -1,0 +1,166 @@
+---
+title: "As2"
+format: html
+editor: visual
+---
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(rvest)
+```
+
+```{r}
+# Last inn data fra URL
+url <- "https://raw.githubusercontent.com/uit-sok-1005-v23/uit-sok-1005-v23.github.io/main/storedata.csv"
+
+# Les CSV-filen inn i en data frame
+store_data <- read_csv(url)
+
+# Sjekk de første radene i datasettet
+head(store_data)
+```
+
+```{r}
+# Filtrer data for de siste 3 månedene av 2017, Region 1 og 9, og Corporate/Consumer segmenter
+sales_filtered <- store_data %>%
+  filter(Order_Date >= as.Date("2017-10-01") & Order_Date <= as.Date("2017-12-31"),
+         Region %in% c("Region 1", "Region 9"),
+         Customer_Segment %in% c("Corporate", "Consumer"))
+
+# Beregn totalt salg per måned
+table_1 <- sales_filtered %>%
+  group_by(format(Order_Date, "%Y-%m"), Region, Customer_Segment) %>%  # Grupper etter måned
+  summarise(Total_Sales = sum(Sales))
+
+# Vis resultatet
+print(table_1)
+```
+
+```{r}
+# Oppgave 2: Plott av månedlig salg i Region 1 og 13 (2015-2017)
+# Filtrer data for Region 1 og 13, og årene 2015-2017
+sales_plot_data <- store_data %>% 
+  mutate(Order_Date = ymd(Order_Date)) %>%  # Konverter Order_Date til Date med lubridate
+  filter(Region %in% c("Region 1", "Region 13"),
+         year(Order_Date) %in% c(2015, 2016, 2017))
+
+# Grupper dataene etter måned og region, og beregn totalt salg
+sales_plot_summary <- sales_plot_data %>%
+  group_by(month = floor_date(Order_Date, "month"), Region) %>%  # Grupper etter måned med lubridate
+  summarise(Total_Sales = sum(Sales), .groups = "drop")  # Legg til .groups = "drop"
+
+# Lag et linjediagram (x er allerede i riktig format)
+ggplot(sales_plot_summary, aes(x = month, y = Total_Sales, color = Region)) +
+  geom_line() +
+  labs(title = "Monthly Total Sales in Region 1 and Region 13 (2015-2017)",
+       x = "Month",
+       y = "Total Sales")
+```
+
+```{r}
+# Oppgave 3: Identifiser måneder med høyere salg i Region 13 enn Region 1
+# Omformater dataene slik at vi har en kolonne for hver region
+sales_wide <- sales_plot_summary %>%
+  pivot_wider(names_from = Region, values_from = Total_Sales)
+
+# Filtrer måneder hvor Region 13 har høyere salg enn Region 1
+table_2 <- sales_wide %>%
+  filter(`Region 13` > `Region 1`)
+
+# Vis resultatet
+print(table_2)
+```
+
+```{r}
+# Filtrer data for 2017 og ekskluder Region 3, 5 og 8
+filtered_data_2017 <- store_data %>%
+  filter(year(Order_Date) == 2017, 
+         !Region %in% c("Region 3", "Region 5", "Region 8"))
+
+# Beregn gjennomsnittlig profitt per kundesegment og produktkategori
+avg_profit_table <- filtered_data_2017 %>%
+  group_by(Customer_Segment, Product_Category) %>%
+  summarise(Avg_Profit = mean(Profit), .groups = "drop")
+
+# Finn segmentet med høyest gjennomsnittlig profitt
+table_3 <- avg_profit_table %>%
+  filter(Avg_Profit == max(Avg_Profit)) # Filtrer for å finne raden med høyest gjennomsnittlig profitt
+
+# Vis resultatet
+print(table_3)
+```
+
+```{r}
+# Extra rm-list and package load to remove earlier datasets.
+#rm(list=ls())
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(rvest)
+```
+
+```{r}
+# URL.
+url <- "https://www.motor.no/aktuelt/motors-store-vintertest-av-rekkevidde-pa-elbiler/217132"
+
+# Les url.
+webpage <- read_html(url)
+
+# Hente alle tabeller.
+tables <- html_nodes(webpage, "table") %>% 
+  html_table(fill = TRUE)
+
+# Velge den riktige tabellen (test med str(tables) for å se alle)
+df <- tables[[1]]  # Velger første tabell
+
+# Rydde opp i kolonnenavnene
+df_clean <- df %>%  # Standardiser kolonnenavn
+  mutate(across(everything(), as.character))  # Sikre at alle verdier er tekst for å unngå faktorer
+
+# Sett kolonnenavn fra første rad
+colnames(df_clean) <- df_clean[1, ]
+
+# Fjern første rad
+df_clean <- df_clean[-1, ]
+
+# Vise de første radene for å sjekke
+head(df_clean)
+```
+
+```{r}
+# Konverter WLTP-tall og STOPP til numeriske verdier
+df_clean$`WLTP-tall` <- as.numeric(gsub(" km/.*", "", df_clean$`WLTP-tall`))  # Fjern "km/" og enheten
+df_clean$STOPP <- as.numeric(gsub(" km", "", df_clean$STOPP))  # Konverter STOPP til numerisk
+
+# Fjern rader med NA-verdier
+df_clean <- df_clean %>%
+  filter(!is.na(`WLTP-tall`), !is.na(STOPP))
+
+# Utfør lineær regresjon
+linear_model <- lm(STOPP ~ `WLTP-tall`, data = df_clean)
+
+# Lag ggplot-diagrammet med regresjonslinje
+ggplot(df_clean, aes(x = `WLTP-tall`, y = STOPP)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") + # Behold den røde linjen
+  geom_smooth(method = "lm", color = "blue") + # Legg til regresjonslinjen
+  labs(title = "Sammenligning av WLTP-rekkevidde og faktisk rekkevidde i Motor-testen",
+       x = "WLTP-rekkevidde (km)",
+       y = "Faktisk rekkevidde (km)",
+       caption = "Data fra Motor.no sin vintertest av elbiler") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Skriv ut sammendrag av modellen for å tolke verdiene
+summary(linear_model)
+```
+
+This plot compares electric cars' official range (WLTP) with their actual range in a winter test. Each dot shows a car's WLTP range (x-axis) and its actual range (y-axis). The red line (y=x) shows perfect agreement. All dots being below this line means no car met its WLTP range in the test. However, the upward trend shows that cars with higher WLTP ranges still achieve higher actual ranges, suggesting WLTP is a useful, though optimistic, indicator.
