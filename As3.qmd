@@ -1,0 +1,277 @@
+---
+title: "As3"
+format: html
+editor: visual
+author: Preben
+---
+
+## As3
+
+```{r}
+rm(list=ls())
+library(readxl)
+library(tidyverse)
+```
+
+```{r}
+# 1
+file_path <- 'C:/Users/prebe/Documents/Samfekk/2.sem/DV SOK-1005/As3/Ukraine _Support.xlsx'
+
+df <- read_excel(file_path, sheet = 'Fig 6. With Refugee Support, €', skip = 10)
+
+# Remove any invalid UTF-8 characters from all character columns
+df <- df %>%
+  mutate(across(where(is.character), ~ iconv(., from = "UTF-8", to = "UTF-8", sub = "")))
+
+# Convert Country to character
+df$Country <- as.character(df$Country)
+
+# Remove rows with missing or empty Country
+df <- df %>%
+  filter(!is.na(Country) & Country != '')
+
+# Inspect the data to identify invalid values in the numeric columns
+print(df %>% filter(!is.numeric(Financial) | !is.numeric(Humanitarian) | !is.numeric(Military) | !is.numeric(Total) | !is.numeric(`Refugee cost estimation`)))
+```
+
+```{r}
+# Filter out rows with NA values in specified columns
+df <- df %>%
+  filter(!is.na(Financial) & 
+         !is.na(Humanitarian) & 
+         !is.na(Military) & 
+         !is.na(`Refugee cost estimation`) & 
+         !is.na(Total))
+
+# Inspect the data for rows containing "Total" or "Summary" in the Country column
+print(df %>% filter(grepl('Total|Summary', Country, ignore.case = TRUE)))
+```
+
+```{r}
+# Editing df
+df <- df %>%
+  filter(!grepl('Total|Summary', Country, ignore.case = TRUE)) %>%
+  select(!any_of(c("...7", "Figure 6. Total bilateral commitments plus refugee costs (billion Euros)"))) %>%
+  mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+
+# Arrange data by Total
+df <- df %>%
+  arrange(Total)
+
+# Pivot data
+df_long <- df %>%
+  pivot_longer(
+    cols = c(Financial, Humanitarian, Military, `Refugee cost estimation`),
+    names_to = 'Category',
+    values_to = 'Amount'
+  )
+```
+
+```{r}
+# Create a bar chart
+df_long %>%
+  ggplot(aes(x = Amount, y = reorder(Country, Amount), fill = Category)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total Bilateral Allocations by Category and Country",
+       x = "Total Bilateral Allocations (€ billion)",
+       y = "Country") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Financial" = "blue", "Humanitarian" = "green", "Military" = "red", `Refugee cost estimation`= 'skyblue')) + 
+  theme(axis.text.y = element_text(size = 8))
+```
+
+```{r}
+rm(list=ls())
+library(tidyverse)
+library(lubridate)
+library(scales)
+```
+
+```{r}
+# 2
+# Load the data
+superstore_sales <- read_csv("https://raw.githubusercontent.com/ywchiu/rcookbook/master/chapter7/superstore_sales.csv")
+
+# 2_a
+# Group the data by month and sum the sales
+monthly_sales <- superstore_sales %>%
+  mutate(Order_Date = as.Date(`Order Date`, format = "%Y/%m/%d")) %>%  # Convert `Order Date` to Date format
+  mutate(Month = month(Order_Date, label = TRUE)) %>%  # Extract month from `Order_Date` and convert to factor with month labels
+  group_by(Month) %>%  # Group by month
+  summarize(Total_Sales = sum(Sales))  # Calculate total sales for each month
+
+# Create a bar chart
+monthly_sales %>%
+  ggplot(aes(x = Month, y = Total_Sales)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Total Sales by Month", 
+       x = "Month", 
+       y = "Total Sales") + 
+  theme_minimal()
+```
+
+```{r}
+# 2_b
+# Group the data by province and sum the sales
+province_sales <- superstore_sales %>%
+  group_by(Province) %>%
+  summarize(Total_Sales = sum(Sales))
+
+# Arrange the provinces by total sales in ascending order
+province_sales <- province_sales %>%
+  arrange(Total_Sales) 
+
+# Create a bar chart
+province_sales %>%
+  ggplot(aes(x = reorder(Province, Total_Sales), y = Total_Sales)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Total Sales by Province",
+       x = "Province",
+       y = "Total Sales") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = comma)
+```
+
+```{r}
+# Group the data by province and product category, and sum the sales
+province_category_sales <- superstore_sales %>%
+  group_by(Province, `Product Category`) %>%
+  summarize(Total_Sales = sum(Sales), .groups = "drop") # Add .groups = "drop" to prevent grouped output
+
+# Find the product category with the highest sales in each province
+most_sold_category <- province_category_sales %>%
+  group_by(Province) %>%
+  filter(Total_Sales == max(Total_Sales))
+
+# Create a bar chart
+most_sold_category %>%
+  ggplot(aes(x = Province, y = Total_Sales, fill = `Product Category`)) +
+  geom_col() +
+  labs(title = "Most Sold Product Category by Province",
+       x = "Province",
+       y = "Total Sales") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = comma)
+```
+
+```{r}
+rm(list=ls())
+library(tidyverse)
+library(gapminder)
+library(gridExtra)
+```
+
+```{r}
+# 3_a
+# Filter data for Asia and group by year
+asia_life_expectancy <- gapminder %>%
+  filter(continent == "Asia") %>%
+  group_by(year) %>%
+  summarize(
+    min_lifeExp = min(lifeExp),
+    max_lifeExp = max(lifeExp)
+  )
+
+# Print the results
+print(asia_life_expectancy)
+```
+
+```{r}
+# 3_b
+# Calculate log differentials for min and max life expectancy
+asia_life_expectancy <- asia_life_expectancy %>%
+  mutate(
+    log_diff_min = c(NA, diff(log(min_lifeExp))),
+    log_diff_max = c(NA, diff(log(max_lifeExp)))
+  )
+
+# Calculate the mean of log differentials
+mean_log_diff_min <- mean(asia_life_expectancy$log_diff_min, na.rm = TRUE)
+mean_log_diff_max <- mean(asia_life_expectancy$log_diff_max, na.rm = TRUE)
+
+# Compare the growth
+if (mean_log_diff_min > mean_log_diff_max) {
+  print("Minimum life expectancy has grown more in Asia.")
+} else if (mean_log_diff_max > mean_log_diff_min) {
+  print("Maximum life expectancy has grown more in Asia.")
+} else {
+  print("Minimum and maximum life expectancy have grown equally in Asia.")
+}
+```
+
+```{r}
+# Calculate average life expectancy and GDP per country
+country_averages <- gapminder %>%
+  group_by(country, continent) %>%
+  summarize(
+    avg_lifeExp = mean(lifeExp),
+    avg_gdpPercap = mean(gdpPercap),
+    .groups = "drop"  # Drop the grouping after summarizing
+  )
+
+# Top 20 countries by life expectancy
+top_lifeExp <- country_averages %>%
+  arrange(desc(avg_lifeExp)) %>%
+  head(20)
+
+# Top 20 countries by GDP per capita
+top_gdpPercap <- country_averages %>%
+  arrange(desc(avg_gdpPercap)) %>%
+  head(20)
+
+# Point plot for life expectancy
+p1 <- top_lifeExp %>%
+  ggplot(aes(x = avg_lifeExp, y = reorder(country, avg_lifeExp))) +
+  geom_point(color = "steelblue", size = 3) +
+  labs(title = "Top 20 Countries by Average Life Expectancy",
+       x = "Average Life Expectancy",
+       y = "Country") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 11)) # Sentrer tittel
+
+# Point plot for GDP per capita
+p2 <- top_gdpPercap %>%
+  ggplot(aes(x = avg_gdpPercap, y = reorder(country, avg_gdpPercap))) +
+  geom_point(color = "steelblue", size = 3) +
+  labs(title = "Top 20 Countries by Average GDP per Capita",
+       x = "Average GDP per Capita",
+       y = "Country") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 11)) # Sentrer tittel
+
+grid.arrange(p1, p2, ncol = 2, widths = c(1, 2))
+```
+
+```{r}
+# 3_d
+# Point plot with log scale and colored by continent
+country_averages %>%
+ggplot(aes(x = avg_gdpPercap, y = avg_lifeExp, color = continent)) +
+  geom_point() +
+  labs(title = "Average Life Expectancy vs. GDP per Capita",
+       x = "GDP per Capita (log scale)",
+       y = "Life Expectancy (log scale)") +
+  theme_minimal() +
+  scale_x_log10() +  # Logarithmic scale for x-axis
+  scale_y_log10()    # Logarithmic scale for y-axis
+```
+
+```{r}
+# 3_e
+# Calculate life expectancy gain for every 5 years
+lifeExp_gain <- gapminder %>%
+  group_by(country) %>%
+  arrange(year) %>%
+  mutate(lifeExp_gain = lifeExp - lag(lifeExp, default = first(lifeExp))) %>%
+  filter(year != first(year)) # Remove first year as it has no gain
+
+# Find the sharpest 5-year drop within each continent
+sharpest_drop <- lifeExp_gain %>%
+  group_by(continent) %>%
+  filter(lifeExp_gain == min(lifeExp_gain))
+
+# Print the results
+print(sharpest_drop)
+```
